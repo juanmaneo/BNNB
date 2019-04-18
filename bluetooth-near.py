@@ -155,7 +155,7 @@ def get_tx_power(bt_addr):
 
 
 # (tuned for my phone ... may need tuning for other phones)
-MY_PHONE_RSSI_AT_1m = -4.0
+MY_PHONE_RSSI_AT_1m = -2.0
 
 
 def rssi_to_distance(input_rssi):
@@ -209,18 +209,20 @@ def get_distance_approximation(bt_addr):
     global previous_tx_power
 
     # this numbers are totally arbitrary
-    num_loop = 97
-    loop_step_sleep = 0.01
+    num_ok_measure = 7
+    loop_step_sleep = 0.005
 
     all_rssi = []
     all_distances = []
 
-    for i in range(1, num_loop):
-        _rssi_bt = get_rssi(bt_addr)
-        if _rssi_bt is None:
+    nb_measure_counter = 0
+    while nb_measure_counter < num_ok_measure:
+        _rssi_bt = get_rssi(bt_addr)        
+        if _rssi_bt is None or int(_rssi_bt) == 0:
             continue
+        nb_measure_counter += 1 
+        
         _rssi_bt = float(_rssi_bt)
-
         distance1 = rssi_to_distance(_rssi_bt)
 
         _tx_power_bt = get_tx_power(bt_addr)
@@ -252,7 +254,7 @@ def get_distance_approximation(bt_addr):
 
     previous_avg_rssi = avg_rssi
     previous_avg_distance = avg_distance
-
+    
     return avg_distance
 
 
@@ -280,6 +282,7 @@ def _main():
     if_bt_back = '(xscreensaver-command -time 2>&1|grep -q "screen non-blanked since" && xscreensaver-command -deactivate || killall xscreensaver); ' + run_xscreensaver_if_killed
 
     max_missed = 3
+    max_distance_in_cm = 90.0
 
     if len(sys.argv) < 2:
         print("Usage " + sys.argv[0] + " <btaddr>")
@@ -289,7 +292,10 @@ def _main():
     bt_in_range = True
     away_counter = 0
     far_counter = 0
-
+    near_counter = 0
+    max_near_to_unlock = 1
+    status = 'near'
+    
     _verbose_log("Identifying device...")
 
     # noinspection PyPep8,PyBroadException
@@ -316,23 +322,27 @@ def _main():
                     distance = get_distance_approximation(bt_addr)
                     print("Approximate distance: " + str(distance * 100.0) + " cm")
 
-                    if distance * 100.0 > 150.0:
+                    if distance * 100.0 > max_distance_in_cm:
                         _verbose_log('DEVICE FAR')
                         status = 'far'
                         far_counter += 1
-
+                        near_counter = 0
+                        
                         if far_counter >= max_missed:
                             _verbose_log('RUNNING GONE COMMAND AFTER THRESHOLD (FAR)')
                             status = 'far_need_lock'
                             os.system(if_bt_gone)
                     else:
-                        _verbose_log('DEVICE NEAR')
-                        status = 'near'
-                        away_counter = 0
-                        far_counter = 0
-                        os.system(if_bt_back)
+                       _verbose_log('DEVICE NEAR')
+                       near_counter += 1
+                       away_counter = 0
+                       far_counter = 0
+                       if near_counter >= max_near_to_unlock:
+                           status = 'near'
+                           os.system(if_bt_back)
                 else:
                     _verbose_log('DEVICE AWAY')
+                    near_counter = 0
                     away_counter += 1
                     status = 'away'
 
